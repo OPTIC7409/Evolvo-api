@@ -1,0 +1,227 @@
+// Prisma Schema for Evolvo
+// Introspected from existing Supabase database
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// User & Authentication
+// ============================================================================
+
+model User {
+  id               String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  email            String   @unique
+  name             String?
+  image            String?
+  stripeCustomerId String?  @unique @map("stripe_customer_id")
+  createdAt        DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("updated_at") @db.Timestamptz(6)
+
+  accounts      Account[]
+  sessions      Session[]
+  subscriptions Subscription[]
+  usage         Usage[]
+  projects      Project[]
+
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  sessionToken String   @unique @map("session_token")
+  expires      DateTime @db.Timestamptz(6)
+  createdAt    DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([sessionToken], map: "idx_sessions_token")
+  @@index([userId], map: "idx_sessions_user_id")
+  @@map("sessions")
+}
+
+model Account {
+  id                String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  type              String
+  provider          String
+  providerAccountId String   @map("provider_account_id")
+  refreshToken      String?  @map("refresh_token")
+  accessToken       String?  @map("access_token")
+  expiresAt         BigInt?  @map("expires_at")
+  tokenType         String?  @map("token_type")
+  scope             String?
+  idToken           String?  @map("id_token")
+  sessionState      String?  @map("session_state")
+  createdAt         DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId], map: "idx_accounts_user_id")
+  @@map("accounts")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime @db.Timestamptz(6)
+
+  @@id([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================================================
+// Subscription & Billing
+// ============================================================================
+
+model Subscription {
+  id                   String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId               String    @map("user_id") @db.Uuid
+  stripeSubscriptionId String?   @unique @map("stripe_subscription_id")
+  stripePriceId        String?   @map("stripe_price_id")
+  status               String    @default("active")
+  tier                 String    @default("free")
+  currentPeriodStart   DateTime? @map("current_period_start") @db.Timestamptz(6)
+  currentPeriodEnd     DateTime? @map("current_period_end") @db.Timestamptz(6)
+  cancelAtPeriodEnd    Boolean?  @default(false) @map("cancel_at_period_end")
+  createdAt            DateTime  @default(dbgenerated("timezone('utc'::text, now())")) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @default(dbgenerated("timezone('utc'::text, now())")) @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([stripeSubscriptionId], map: "idx_subscriptions_stripe_subscription_id")
+  @@index([userId], map: "idx_subscriptions_user_id")
+  @@map("subscriptions")
+}
+
+model Usage {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  month      String
+  aiRequests Int?     @default(0) @map("ai_requests")
+  createdAt  DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([userId, month])
+  @@index([userId, month], map: "idx_usage_user_month")
+  @@map("usage")
+}
+
+// ============================================================================
+// Projects
+// ============================================================================
+
+model Project {
+  id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  name         String
+  description  String?
+  thumbnail    String?
+  framework    String?   @default("react-vite")
+  status       String    @default("active")
+  lastOpenedAt DateTime? @default(dbgenerated("timezone('utc'::text, now())")) @map("last_opened_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(dbgenerated("timezone('utc'::text, now())")) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(dbgenerated("timezone('utc'::text, now())")) @map("updated_at") @db.Timestamptz(6)
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  messages ProjectMessage[]
+  files    ProjectFile[]
+
+  @@map("projects")
+}
+
+// ============================================================================
+// Project Messages (Chat History)
+// ============================================================================
+
+model ProjectMessage {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  projectId  String   @map("project_id") @db.Uuid
+  messageId  String   @map("message_id")
+  type       String
+  content    String
+  timestamp  BigInt
+  toolCalls  Json?    @default("[]") @map("tool_calls")
+  savedFiles Json?    @default("[]") @map("saved_files")
+  createdAt  DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("created_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([projectId, messageId])
+  @@index([projectId], map: "idx_project_messages_project_id")
+  @@index([projectId, timestamp], map: "idx_project_messages_timestamp")
+  @@map("project_messages")
+}
+
+// ============================================================================
+// Project Files (Code Persistence)
+// ============================================================================
+
+model ProjectFile {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  path      String
+  content   String
+  createdAt DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("updated_at") @db.Timestamptz(6)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([projectId, path])
+  @@index([projectId], map: "idx_project_files_project_id")
+  @@map("project_files")
+}
+
+// ============================================================================
+// Security Audits
+// ============================================================================
+
+model SecurityAudit {
+  id             String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  projectId      String    @map("project_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  scanType       String    @map("scan_type") // 'partial' or 'full'
+  status         String    @default("pending") // 'pending', 'complete', 'failed'
+  summary        Json?     @default("{}")
+  findings       Json?     @default("[]")
+  categories     Json?     @default("[]")
+  previewFinding Json?     @map("preview_finding")
+  scannedAt      DateTime  @default(dbgenerated("timezone('utc'::text, now())")) @map("scanned_at") @db.Timestamptz(6)
+  completedAt    DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(dbgenerated("timezone('utc'::text, now())")) @map("created_at") @db.Timestamptz(6)
+
+  purchases SecurityAuditPurchase[]
+
+  @@index([projectId], map: "idx_security_audits_project_id")
+  @@index([userId], map: "idx_security_audits_user_id")
+  @@map("security_audits")
+}
+
+model SecurityAuditPurchase {
+  id                    String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId                String   @map("user_id") @db.Uuid
+  projectId             String   @map("project_id") @db.Uuid
+  auditId               String   @map("audit_id") @db.Uuid
+  stripePaymentIntentId String?  @unique @map("stripe_payment_intent_id")
+  amount                Int
+  currency              String   @default("gbp")
+  status                String   @default("pending") // 'pending', 'completed', 'refunded', 'failed'
+  createdAt             DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("updated_at") @db.Timestamptz(6)
+
+  audit SecurityAudit @relation(fields: [auditId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([userId], map: "idx_security_audit_purchases_user_id")
+  @@index([projectId], map: "idx_security_audit_purchases_project_id")
+  @@index([stripePaymentIntentId], map: "idx_security_audit_purchases_payment_intent")
+  @@map("security_audit_purchases")
+}

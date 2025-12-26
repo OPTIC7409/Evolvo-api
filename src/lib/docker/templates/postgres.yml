@@ -1,0 +1,51 @@
+# PostgreSQL Docker Compose Template
+# Used for provisioning managed PostgreSQL databases for Evolvo projects
+
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: evolvo-${PROJECT_ID}-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: evolvo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: app
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolvo -d app"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    labels:
+      - "evolvo.project=${PROJECT_ID}"
+      - "evolvo.service=postgres"
+      - "evolvo.managed=true"
+    networks:
+      - evolvo-network
+
+volumes:
+  postgres_data:
+    driver: local
+    labels:
+      - "evolvo.project=${PROJECT_ID}"
+
+networks:
+  evolvo-network:
+    name: evolvo-${PROJECT_ID}
+    driver: bridge

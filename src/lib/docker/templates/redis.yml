@@ -1,0 +1,46 @@
+# Redis Docker Compose Template
+# Used for provisioning Redis cache for Evolvo projects
+
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: evolvo-${PROJECT_ID}-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    labels:
+      - "evolvo.project=${PROJECT_ID}"
+      - "evolvo.service=redis"
+      - "evolvo.managed=true"
+    networks:
+      - evolvo-network
+
+volumes:
+  redis_data:
+    driver: local
+    labels:
+      - "evolvo.project=${PROJECT_ID}"
+
+networks:
+  evolvo-network:
+    name: evolvo-${PROJECT_ID}
+    external: true
