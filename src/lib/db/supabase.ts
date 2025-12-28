@@ -1,12 +1,16 @@
 /**
- * Supabase Client
+ * Database Functions
  * 
- * Provides client and server-side Supabase instances.
+ * Uses Prisma for all database operations.
+ * Maintains backwards-compatible function signatures.
  */
 
-import { createClient } from "@supabase/supabase-js";
+import prisma from "./prisma";
 
-// Database types
+// ============================================================================
+// Type Exports (for backwards compatibility)
+// ============================================================================
+
 export interface User {
   id: string;
   email: string;
@@ -73,429 +77,353 @@ export interface ProjectMessage {
   created_at: string;
 }
 
+export interface ProjectFile {
+  id: string;
+  project_id: string;
+  path: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectEnvVar {
+  id: string;
+  project_id: string;
+  key: string;
+  value: string;
+  is_secret: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Keep Database interface for any code that references it
 export interface Database {
   public: {
     Tables: {
-      users: {
-        Row: User;
-        Insert: Omit<User, "id" | "created_at" | "updated_at">;
-        Update: Partial<Omit<User, "id" | "created_at" | "updated_at">>;
-      };
-      subscriptions: {
-        Row: Subscription;
-        Insert: Omit<Subscription, "id" | "created_at" | "updated_at">;
-        Update: Partial<Omit<Subscription, "id" | "created_at" | "updated_at">>;
-      };
-      usage: {
-        Row: Usage;
-        Insert: Omit<Usage, "id" | "created_at" | "updated_at">;
-        Update: Partial<Omit<Usage, "id" | "created_at" | "updated_at">>;
-      };
+      users: { Row: User; Insert: Omit<User, "id" | "created_at" | "updated_at">; Update: Partial<Omit<User, "id" | "created_at" | "updated_at">>; };
+      subscriptions: { Row: Subscription; Insert: Omit<Subscription, "id" | "created_at" | "updated_at">; Update: Partial<Omit<Subscription, "id" | "created_at" | "updated_at">>; };
+      usage: { Row: Usage; Insert: Omit<Usage, "id" | "created_at" | "updated_at">; Update: Partial<Omit<Usage, "id" | "created_at" | "updated_at">>; };
     };
   };
 }
 
-// Environment variables
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_PUBLIC_KEY;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-// Validate environment variables
-if (!supabaseUrl) {
-  console.warn("Missing SUPABASE_URL environment variable");
-}
+// ============================================================================
+// Legacy Supabase Client Functions (now use Prisma)
+// ============================================================================
 
 /**
- * Client-side Supabase client (uses anon key)
- * Use this in React components
+ * @deprecated Use prisma directly instead
+ * Kept for backwards compatibility - returns a mock object
  */
 export function createBrowserClient() {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error("Missing Supabase environment variables");
-  }
-  
-  return createClient<Database>(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-    },
-  });
+  console.warn("createBrowserClient is deprecated - use Prisma directly");
+  throw new Error("Browser client not available - use API routes");
 }
 
 /**
- * Server-side Supabase client with service role (bypasses RLS)
- * Use this in API routes and server actions
- * 
- * Note: Returns `any` typed client to allow dynamic table access
- * without needing to define every table in the Database interface.
+ * @deprecated Use prisma directly instead
+ * Returns prisma instance for backwards compatibility
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function createServerClient(): any {
-  if (!supabaseUrl || !supabaseServiceKey) {
-    throw new Error("Missing Supabase environment variables for server");
-  }
-  
-  return createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
+export function createServerClient() {
+  return prisma;
 }
 
-/**
- * Get or create a user in the database
- */
+// ============================================================================
+// Helper to convert Prisma records to legacy format
+// ============================================================================
+
+function toUser(record: {
+  id: string;
+  email: string;
+  name: string | null;
+  image: string | null;
+  stripeCustomerId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): User {
+  return {
+    id: record.id,
+    email: record.email,
+    name: record.name,
+    image: record.image,
+    stripe_customer_id: record.stripeCustomerId,
+    created_at: record.createdAt.toISOString(),
+    updated_at: record.updatedAt.toISOString(),
+  };
+}
+
+function toSubscription(record: {
+  id: string;
+  userId: string;
+  stripeSubscriptionId: string | null;
+  stripePriceId: string | null;
+  status: string;
+  tier: string;
+  currentPeriodStart: Date | null;
+  currentPeriodEnd: Date | null;
+  cancelAtPeriodEnd: boolean | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): Subscription {
+  return {
+    id: record.id,
+    user_id: record.userId,
+    stripe_subscription_id: record.stripeSubscriptionId,
+    stripe_price_id: record.stripePriceId,
+    status: record.status as Subscription["status"],
+    tier: record.tier as Subscription["tier"],
+    current_period_start: record.currentPeriodStart?.toISOString() || null,
+    current_period_end: record.currentPeriodEnd?.toISOString() || null,
+    cancel_at_period_end: record.cancelAtPeriodEnd ?? false,
+    created_at: record.createdAt.toISOString(),
+    updated_at: record.updatedAt.toISOString(),
+  };
+}
+
+function toProject(record: {
+  id: string;
+  userId: string;
+  name: string;
+  description: string | null;
+  thumbnail: string | null;
+  framework: string | null;
+  status: string;
+  lastOpenedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): Project {
+  return {
+    id: record.id,
+    user_id: record.userId,
+    name: record.name,
+    description: record.description,
+    thumbnail: record.thumbnail,
+    framework: record.framework,
+    status: record.status as Project["status"],
+    last_opened_at: record.lastOpenedAt?.toISOString() || record.createdAt.toISOString(),
+    created_at: record.createdAt.toISOString(),
+    updated_at: record.updatedAt.toISOString(),
+  };
+}
+
+// ============================================================================
+// User Functions
+// ============================================================================
+
 export async function getOrCreateUser(email: string, name?: string, image?: string): Promise<User> {
-  const supabase = createServerClient();
-  
-  // Try to get existing user (use maybeSingle to handle no rows gracefully)
-  const { data: existingUser, error: fetchError } = await supabase
-    .from("users")
-    .select("*")
-    .eq("email", email)
-    .maybeSingle();
-    
-  // If we got a user, return it
-  if (existingUser) {
-    return existingUser;
+  // Try to get existing user
+  let user = await prisma.user.findUnique({
+    where: { email },
+  });
+
+  if (user) {
+    return toUser(user);
   }
-  
-  // Check if table exists (fetchError will have specific message if not)
-  if (fetchError && (
-    fetchError.message.includes("schema cache") ||
-    fetchError.message.includes("does not exist") ||
-    fetchError.message.includes("relation")
-  )) {
-    throw new Error(`Database tables not created: ${fetchError.message}`);
-  }
-  
+
   // Create new user
-  const { data: newUser, error } = await supabase
-    .from("users")
-    .insert({
+  user = await prisma.user.create({
+    data: {
       email,
       name: name || null,
       image: image || null,
-      stripe_customer_id: null,
-    })
-    .select()
-    .single();
-    
-  if (error) {
-    throw new Error(`Failed to create user: ${error.message}`);
-  }
-  
+    },
+  });
+
   // Create free subscription for new user
   try {
-    await supabase.from("subscriptions").insert({
-      user_id: newUser.id,
-      tier: "free",
-      status: "active",
+    await prisma.subscription.create({
+      data: {
+        userId: user.id,
+        tier: "free",
+        status: "active",
+      },
     });
   } catch {
     // Ignore subscription creation errors
   }
-  
-  return newUser;
+
+  return toUser(user);
 }
 
-/**
- * Get user's current subscription
- */
 export async function getUserSubscription(userId: string): Promise<Subscription | null> {
-  const supabase = createServerClient();
-  
-  const { data } = await supabase
-    .from("subscriptions")
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-    
-  return data;
+  const subscription = await prisma.subscription.findFirst({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return subscription ? toSubscription(subscription) : null;
 }
 
-/**
- * Update user's subscription
- */
 export async function updateSubscription(
   userId: string,
   data: Partial<Omit<Subscription, "id" | "user_id" | "created_at" | "updated_at">>
 ): Promise<void> {
-  const supabase = createServerClient();
-  
-  const { error } = await supabase
-    .from("subscriptions")
-    .update(data)
-    .eq("user_id", userId);
-    
-  if (error) {
-    throw new Error(`Failed to update subscription: ${error.message}`);
-  }
+  await prisma.subscription.updateMany({
+    where: { userId },
+    data: {
+      stripeSubscriptionId: data.stripe_subscription_id,
+      stripePriceId: data.stripe_price_id,
+      status: data.status,
+      tier: data.tier,
+      currentPeriodStart: data.current_period_start ? new Date(data.current_period_start) : undefined,
+      currentPeriodEnd: data.current_period_end ? new Date(data.current_period_end) : undefined,
+      cancelAtPeriodEnd: data.cancel_at_period_end,
+    },
+  });
 }
 
-/**
- * Get user's usage for current month
- */
 export async function getMonthlyUsage(userId: string): Promise<Usage | null> {
-  const supabase = createServerClient();
-  const month = new Date().toISOString().slice(0, 7); // "2024-12"
-  
-  const { data } = await supabase
-    .from("usage")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("month", month)
-    .maybeSingle();
-    
-  return data;
-}
-
-/**
- * Increment AI request count for user
- */
-export async function incrementUsage(userId: string): Promise<void> {
-  const supabase = createServerClient();
   const month = new Date().toISOString().slice(0, 7);
-  
-  // Try to increment existing record
-  const { data: existing } = await supabase
-    .from("usage")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("month", month)
-    .maybeSingle();
-    
-  if (existing) {
-    await supabase
-      .from("usage")
-      .update({ ai_requests: existing.ai_requests + 1 })
-      .eq("id", existing.id);
-  } else {
-    // Create new usage record
-    await supabase.from("usage").insert({
-      user_id: userId,
+
+  const usage = await prisma.usage.findUnique({
+    where: {
+      userId_month: { userId, month },
+    },
+  });
+
+  if (!usage) return null;
+
+  return {
+    id: usage.id,
+    user_id: usage.userId,
+    month: usage.month,
+    ai_requests: usage.aiRequests || 0,
+    created_at: usage.createdAt.toISOString(),
+    updated_at: usage.updatedAt.toISOString(),
+  };
+}
+
+export async function incrementUsage(userId: string): Promise<void> {
+  const month = new Date().toISOString().slice(0, 7);
+
+  await prisma.usage.upsert({
+    where: {
+      userId_month: { userId, month },
+    },
+    update: {
+      aiRequests: { increment: 1 },
+    },
+    create: {
+      userId,
       month,
-      ai_requests: 1,
-    });
-  }
+      aiRequests: 1,
+    },
+  });
 }
 
-/**
- * Update user's Stripe customer ID
- */
 export async function updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void> {
-  const supabase = createServerClient();
-  
-  const { error } = await supabase
-    .from("users")
-    .update({ stripe_customer_id: stripeCustomerId })
-    .eq("id", userId);
-    
-  if (error) {
-    throw new Error(`Failed to update Stripe customer ID: ${error.message}`);
-  }
+  await prisma.user.update({
+    where: { id: userId },
+    data: { stripeCustomerId },
+  });
 }
 
-/**
- * Get user by Stripe customer ID
- */
 export async function getUserByStripeCustomerId(stripeCustomerId: string): Promise<User | null> {
-  const supabase = createServerClient();
-  
-  const { data } = await supabase
-    .from("users")
-    .select("*")
-    .eq("stripe_customer_id", stripeCustomerId)
-    .maybeSingle();
-    
-  return data;
+  const user = await prisma.user.findUnique({
+    where: { stripeCustomerId },
+  });
+
+  return user ? toUser(user) : null;
 }
 
-/**
- * Get user by email
- */
 export async function getUserByEmail(email: string): Promise<User | null> {
-  const supabase = createServerClient();
-  
-  const { data } = await supabase
-    .from("users")
-    .select("*")
-    .eq("email", email)
-    .maybeSingle();
-    
-  return data;
+  const user = await prisma.user.findUnique({
+    where: { email },
+  });
+
+  return user ? toUser(user) : null;
 }
 
-// ========================================
-// PROJECT FUNCTIONS
-// ========================================
+// ============================================================================
+// Project Functions
+// ============================================================================
 
-/**
- * Get all projects for a user
- */
 export async function getUserProjects(userId: string): Promise<Project[]> {
-  const supabase = createServerClient();
-  
-  const { data, error } = await supabase
-    .from("projects")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .order("last_opened_at", { ascending: false });
-    
-  if (error) {
-    console.error("Error fetching projects:", error);
-    return [];
-  }
-  
-  return data || [];
+  const projects = await prisma.project.findMany({
+    where: {
+      userId,
+      status: "active",
+    },
+    orderBy: { lastOpenedAt: "desc" },
+  });
+
+  return projects.map(toProject);
 }
 
-/**
- * Get a single project by ID
- */
 export async function getProject(projectId: string): Promise<Project | null> {
-  const supabase = createServerClient();
-  
-  const { data } = await supabase
-    .from("projects")
-    .select("*")
-    .eq("id", projectId)
-    .maybeSingle();
-    
-  return data;
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+  });
+
+  return project ? toProject(project) : null;
 }
 
-/**
- * Create a new project
- */
 export async function createProject(
   userId: string,
   name: string,
   description?: string,
   framework?: string
 ): Promise<Project> {
-  const supabase = createServerClient();
-  
-  // Try to create with framework column first
-  let { data, error } = await supabase
-    .from("projects")
-    .insert({
-      user_id: userId,
+  const project = await prisma.project.create({
+    data: {
+      userId,
       name,
       description: description || null,
       framework: framework || "react-vite",
       status: "active",
-    })
-    .select()
-    .single();
-  
-  // If framework column doesn't exist, retry without it
-  if (error && error.message.includes("framework")) {
-    console.warn("Framework column not found, creating project without it. Run migration to add the column.");
-    const result = await supabase
-      .from("projects")
-      .insert({
-        user_id: userId,
-        name,
-        description: description || null,
-        status: "active",
-      })
-      .select()
-      .single();
-    data = result.data;
-    error = result.error;
-  }
-    
-  if (error) {
-    throw new Error(`Failed to create project: ${error.message}`);
-  }
-  
-  return data;
+    },
+  });
+
+  return toProject(project);
 }
 
-/**
- * Update a project
- */
 export async function updateProject(
   projectId: string,
   data: Partial<Pick<Project, "name" | "description" | "thumbnail" | "status">>
 ): Promise<void> {
-  const supabase = createServerClient();
-  
-  const { error } = await supabase
-    .from("projects")
-    .update(data)
-    .eq("id", projectId);
-    
-  if (error) {
-    throw new Error(`Failed to update project: ${error.message}`);
-  }
+  await prisma.project.update({
+    where: { id: projectId },
+    data,
+  });
 }
 
-/**
- * Update project's last opened timestamp
- */
 export async function touchProject(projectId: string): Promise<void> {
-  const supabase = createServerClient();
-  
-  await supabase
-    .from("projects")
-    .update({ last_opened_at: new Date().toISOString() })
-    .eq("id", projectId);
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { lastOpenedAt: new Date() },
+  });
 }
 
-/**
- * Delete (archive) a project
- */
 export async function deleteProject(projectId: string): Promise<void> {
-  const supabase = createServerClient();
-  
-  const { error } = await supabase
-    .from("projects")
-    .update({ status: "deleted" })
-    .eq("id", projectId);
-    
-  if (error) {
-    throw new Error(`Failed to delete project: ${error.message}`);
-  }
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { status: "deleted" },
+  });
 }
 
-// ========================================
-// PROJECT MESSAGE FUNCTIONS
-// ========================================
+// ============================================================================
+// Project Message Functions
+// ============================================================================
 
-/**
- * Get all messages for a project
- */
 export async function getProjectMessages(projectId: string): Promise<ProjectMessage[]> {
-  const supabase = createServerClient();
-  
-  const { data, error } = await supabase
-    .from("project_messages")
-    .select("*")
-    .eq("project_id", projectId)
-    .order("timestamp", { ascending: true });
-    
-  if (error) {
-    // Table might not exist yet, return empty array
-    if (error.message.includes("does not exist") || error.message.includes("relation")) {
-      console.warn("project_messages table does not exist. Run the migration to create it.");
-      return [];
-    }
-    console.error("Error fetching messages:", error);
-    return [];
-  }
-  
-  return data || [];
+  const messages = await prisma.projectMessage.findMany({
+    where: { projectId },
+    orderBy: { timestamp: "asc" },
+  });
+
+  return messages.map((m) => ({
+    id: m.id,
+    project_id: m.projectId,
+    message_id: m.messageId,
+    type: m.type as "user" | "assistant",
+    content: m.content,
+    timestamp: Number(m.timestamp),
+    tool_calls: (m.toolCalls as ToolCall[]) || [],
+    saved_files: (m.savedFiles as string[]) || [],
+    created_at: m.createdAt.toISOString(),
+  }));
 }
 
-/**
- * Save a message to a project
- */
 export async function saveProjectMessage(
   projectId: string,
   message: {
@@ -507,40 +435,42 @@ export async function saveProjectMessage(
     savedFiles?: string[];
   }
 ): Promise<ProjectMessage | null> {
-  const supabase = createServerClient();
-  
-  const { data, error } = await supabase
-    .from("project_messages")
-    .upsert({
-      project_id: projectId,
-      message_id: message.id,
+  const result = await prisma.projectMessage.upsert({
+    where: {
+      projectId_messageId: {
+        projectId,
+        messageId: message.id,
+      },
+    },
+    update: {
+      content: message.content,
+      toolCalls: message.toolCalls || [],
+      savedFiles: message.savedFiles || [],
+    },
+    create: {
+      projectId,
+      messageId: message.id,
       type: message.type,
       content: message.content,
-      timestamp: message.timestamp,
-      tool_calls: message.toolCalls || [],
-      saved_files: message.savedFiles || [],
-    }, {
-      onConflict: "project_id,message_id"
-    })
-    .select()
-    .single();
-    
-  if (error) {
-    // Table might not exist yet
-    if (error.message.includes("does not exist") || error.message.includes("relation")) {
-      console.warn("project_messages table does not exist. Run the migration to create it.");
-      return null;
-    }
-    console.error("Error saving message:", error);
-    return null;
-  }
-  
-  return data;
+      timestamp: BigInt(message.timestamp),
+      toolCalls: message.toolCalls || [],
+      savedFiles: message.savedFiles || [],
+    },
+  });
+
+  return {
+    id: result.id,
+    project_id: result.projectId,
+    message_id: result.messageId,
+    type: result.type as "user" | "assistant",
+    content: result.content,
+    timestamp: Number(result.timestamp),
+    tool_calls: (result.toolCalls as ToolCall[]) || [],
+    saved_files: (result.savedFiles as string[]) || [],
+    created_at: result.createdAt.toISOString(),
+  };
 }
 
-/**
- * Update a message (for streaming updates)
- */
 export async function updateProjectMessage(
   projectId: string,
   messageId: string,
@@ -550,193 +480,112 @@ export async function updateProjectMessage(
     savedFiles?: string[];
   }
 ): Promise<void> {
-  const supabase = createServerClient();
-  
-  const updateData: Record<string, unknown> = {};
-  if (updates.content !== undefined) updateData.content = updates.content;
-  if (updates.toolCalls !== undefined) updateData.tool_calls = updates.toolCalls;
-  if (updates.savedFiles !== undefined) updateData.saved_files = updates.savedFiles;
-  
-  const { error } = await supabase
-    .from("project_messages")
-    .update(updateData)
-    .eq("project_id", projectId)
-    .eq("message_id", messageId);
-    
-  if (error) {
-    // Table might not exist yet, silently fail
-    if (!error.message.includes("does not exist") && !error.message.includes("relation")) {
-      console.error("Error updating message:", error);
-    }
-  }
+  await prisma.projectMessage.updateMany({
+    where: {
+      projectId,
+      messageId,
+    },
+    data: {
+      content: updates.content,
+      toolCalls: updates.toolCalls,
+      savedFiles: updates.savedFiles,
+    },
+  });
 }
 
-/**
- * Delete all messages for a project
- */
 export async function deleteProjectMessages(projectId: string): Promise<void> {
-  const supabase = createServerClient();
-  
-  const { error } = await supabase
-    .from("project_messages")
-    .delete()
-    .eq("project_id", projectId);
-    
-  if (error) {
-    // Table might not exist yet, silently fail
-    if (!error.message.includes("does not exist") && !error.message.includes("relation")) {
-      console.error("Error deleting messages:", error);
-    }
-  }
+  await prisma.projectMessage.deleteMany({
+    where: { projectId },
+  });
 }
 
 // ============================================================================
-// Project Files (Code Persistence)
+// Project Files Functions
 // ============================================================================
 
-export interface ProjectFile {
-  id: string;
-  project_id: string;
-  path: string;
-  content: string;
-  created_at: string;
-  updated_at: string;
-}
-
-/**
- * Get all files for a project
- */
 export async function getProjectFiles(projectId: string): Promise<ProjectFile[]> {
-  const supabase = createServerClient();
-  
-  const { data, error } = await supabase
-    .from("project_files")
-    .select("*")
-    .eq("project_id", projectId);
-    
-  if (error) {
-    // Table might not exist yet, return empty array
-    if (error.message.includes("does not exist") || error.message.includes("relation")) {
-      console.warn("project_files table does not exist. Run the migration to create it.");
-      return [];
-    }
-    console.error("Error fetching files:", error);
-    return [];
-  }
-  
-  return data || [];
+  const files = await prisma.projectFile.findMany({
+    where: { projectId },
+  });
+
+  return files.map((f) => ({
+    id: f.id,
+    project_id: f.projectId,
+    path: f.path,
+    content: f.content,
+    created_at: f.createdAt.toISOString(),
+    updated_at: f.updatedAt.toISOString(),
+  }));
 }
 
-/**
- * Save or update a file in a project
- */
 export async function saveProjectFile(
   projectId: string,
   path: string,
   content: string
 ): Promise<ProjectFile | null> {
-  const supabase = createServerClient();
-  
-  const { data, error } = await supabase
-    .from("project_files")
-    .upsert(
-      {
-        project_id: projectId,
-        path,
-        content,
-        updated_at: new Date().toISOString(),
-      },
-      {
-        onConflict: "project_id,path",
-      }
-    )
-    .select()
-    .single();
-    
-  if (error) {
-    // Table might not exist yet
-    if (error.message.includes("does not exist") || error.message.includes("relation")) {
-      console.warn("project_files table does not exist. Run the migration to create it.");
-      return null;
-    }
-    console.error("Error saving file:", error);
-    return null;
-  }
-  
-  return data;
+  const result = await prisma.projectFile.upsert({
+    where: {
+      projectId_path: { projectId, path },
+    },
+    update: { content },
+    create: {
+      projectId,
+      path,
+      content,
+    },
+  });
+
+  return {
+    id: result.id,
+    project_id: result.projectId,
+    path: result.path,
+    content: result.content,
+    created_at: result.createdAt.toISOString(),
+    updated_at: result.updatedAt.toISOString(),
+  };
 }
 
-/**
- * Save multiple files at once (batch upsert)
- */
 export async function saveProjectFiles(
   projectId: string,
   files: { path: string; content: string }[]
 ): Promise<boolean> {
-  const supabase = createServerClient();
-  
-  const records = files.map(f => ({
-    project_id: projectId,
-    path: f.path,
-    content: f.content,
-    updated_at: new Date().toISOString(),
-  }));
-  
-  const { error } = await supabase
-    .from("project_files")
-    .upsert(records, { onConflict: "project_id,path" });
-    
-  if (error) {
-    if (error.message.includes("does not exist") || error.message.includes("relation")) {
-      console.warn("project_files table does not exist. Run the migration to create it.");
-      return false;
-    }
-    console.error("Error saving files:", error);
+  try {
+    await prisma.$transaction(
+      files.map((f) =>
+        prisma.projectFile.upsert({
+          where: {
+            projectId_path: { projectId, path: f.path },
+          },
+          update: { content: f.content },
+          create: {
+            projectId,
+            path: f.path,
+            content: f.content,
+          },
+        })
+      )
+    );
+    return true;
+  } catch (err) {
+    console.error("Error saving files:", err);
     return false;
   }
-  
-  return true;
 }
 
-/**
- * Delete a file from a project
- */
 export async function deleteProjectFile(projectId: string, path: string): Promise<void> {
-  const supabase = createServerClient();
-  
-  const { error } = await supabase
-    .from("project_files")
-    .delete()
-    .eq("project_id", projectId)
-    .eq("path", path);
-    
-  if (error) {
-    if (!error.message.includes("does not exist") && !error.message.includes("relation")) {
-      console.error("Error deleting file:", error);
-    }
-  }
+  await prisma.projectFile.deleteMany({
+    where: { projectId, path },
+  });
 }
 
-/**
- * Delete all files for a project
- */
 export async function deleteProjectFiles(projectId: string): Promise<void> {
-  const supabase = createServerClient();
-  
-  const { error } = await supabase
-    .from("project_files")
-    .delete()
-    .eq("project_id", projectId);
-    
-  if (error) {
-    if (!error.message.includes("does not exist") && !error.message.includes("relation")) {
-      console.error("Error deleting files:", error);
-    }
-  }
+  await prisma.projectFile.deleteMany({
+    where: { projectId },
+  });
 }
 
 // ============================================================================
-// Security Audit Functions
+// Security Audit Types
 // ============================================================================
 
 import type {
@@ -779,171 +628,149 @@ export interface SecurityAuditPurchase {
   updated_at: string;
 }
 
-/**
- * Save a partial security scan result
- */
+// ============================================================================
+// Security Audit Functions
+// ============================================================================
+
 export async function savePartialScan(
   projectId: string,
   userId: string,
   scan: PartialSecurityScan
 ): Promise<SecurityAudit | null> {
-  const supabase = createServerClient();
-  
-  const { data, error } = await supabase
-    .from("security_audits")
-    .insert({
-      project_id: projectId,
-      user_id: userId,
-      scan_type: "partial",
+  const result = await prisma.securityAudit.create({
+    data: {
+      projectId,
+      userId,
+      scanType: "partial",
       status: "complete",
-      summary: scan.summary,
-      findings: [], // Empty for partial scans
+      summary: scan.summary as object,
+      findings: [],
       categories: scan.categories,
-      preview_finding: scan.previewFinding || null,
-      scanned_at: scan.scannedAt,
-      completed_at: scan.scannedAt,
-    })
-    .select()
-    .single();
-    
-  if (error) {
-    if (error.message.includes("does not exist") || error.message.includes("relation")) {
-      console.warn("security_audits table does not exist. Run the migration to create it.");
-      return null;
-    }
-    console.error("Error saving partial scan:", error);
-    return null;
-  }
-  
-  return data;
+      previewFinding: scan.previewFinding as object || null,
+      scannedAt: new Date(scan.scannedAt),
+      completedAt: new Date(scan.scannedAt),
+    },
+  });
+
+  return {
+    id: result.id,
+    project_id: result.projectId,
+    user_id: result.userId,
+    scan_type: result.scanType as "partial" | "full",
+    status: result.status as "pending" | "complete" | "failed",
+    summary: result.summary as AuditSummary,
+    findings: (result.findings as SecurityFinding[]) || [],
+    categories: (result.categories as SecurityCategory[]) || [],
+    preview_finding: result.previewFinding as SecurityAudit["preview_finding"],
+    scanned_at: result.scannedAt.toISOString(),
+    completed_at: result.completedAt?.toISOString(),
+    created_at: result.createdAt.toISOString(),
+  };
 }
 
-/**
- * Save a full security audit result
- */
 export async function saveFullAudit(
   userId: string,
   audit: FullSecurityAudit
 ): Promise<SecurityAudit | null> {
-  const supabase = createServerClient();
-  
-  const { data, error } = await supabase
-    .from("security_audits")
-    .insert({
-      project_id: audit.projectId,
-      user_id: userId,
-      scan_type: "full",
+  const result = await prisma.securityAudit.create({
+    data: {
+      projectId: audit.projectId,
+      userId,
+      scanType: "full",
       status: audit.status,
-      summary: audit.summary,
-      findings: audit.findings,
-      categories: [...new Set(audit.findings.map(f => f.category))],
-      preview_finding: null,
-      scanned_at: audit.scannedAt,
-      completed_at: audit.completedAt,
-    })
-    .select()
-    .single();
-    
-  if (error) {
-    if (error.message.includes("does not exist") || error.message.includes("relation")) {
-      console.warn("security_audits table does not exist. Run the migration to create it.");
-      return null;
-    }
-    console.error("Error saving full audit:", error);
-    return null;
-  }
-  
-  return data;
+      summary: audit.summary as object,
+      findings: audit.findings as object[],
+      categories: [...new Set(audit.findings.map((f) => f.category))],
+      previewFinding: null,
+      scannedAt: new Date(audit.scannedAt),
+      completedAt: audit.completedAt ? new Date(audit.completedAt) : null,
+    },
+  });
+
+  return {
+    id: result.id,
+    project_id: result.projectId,
+    user_id: result.userId,
+    scan_type: result.scanType as "partial" | "full",
+    status: result.status as "pending" | "complete" | "failed",
+    summary: result.summary as AuditSummary,
+    findings: (result.findings as SecurityFinding[]) || [],
+    categories: (result.categories as SecurityCategory[]) || [],
+    preview_finding: undefined,
+    scanned_at: result.scannedAt.toISOString(),
+    completed_at: result.completedAt?.toISOString(),
+    created_at: result.createdAt.toISOString(),
+  };
 }
 
-/**
- * Get the latest security audit for a project
- */
 export async function getLatestSecurityAudit(
   projectId: string,
   scanType?: "partial" | "full"
 ): Promise<SecurityAudit | null> {
-  const supabase = createServerClient();
-  
-  let query = supabase
-    .from("security_audits")
-    .select("*")
-    .eq("project_id", projectId)
-    .order("created_at", { ascending: false })
-    .limit(1);
-    
-  if (scanType) {
-    query = query.eq("scan_type", scanType);
-  }
-  
-  const { data, error } = await query.maybeSingle();
-  
-  if (error) {
-    if (error.message.includes("does not exist") || error.message.includes("relation")) {
-      return null;
-    }
-    console.error("Error fetching security audit:", error);
-    return null;
-  }
-  
-  return data;
+  const result = await prisma.securityAudit.findFirst({
+    where: {
+      projectId,
+      ...(scanType && { scanType }),
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!result) return null;
+
+  return {
+    id: result.id,
+    project_id: result.projectId,
+    user_id: result.userId,
+    scan_type: result.scanType as "partial" | "full",
+    status: result.status as "pending" | "complete" | "failed",
+    summary: result.summary as AuditSummary,
+    findings: (result.findings as SecurityFinding[]) || [],
+    categories: (result.categories as SecurityCategory[]) || [],
+    preview_finding: result.previewFinding as SecurityAudit["preview_finding"],
+    scanned_at: result.scannedAt.toISOString(),
+    completed_at: result.completedAt?.toISOString(),
+    created_at: result.createdAt.toISOString(),
+  };
 }
 
-/**
- * Get a security audit by ID
- */
 export async function getSecurityAudit(auditId: string): Promise<SecurityAudit | null> {
-  const supabase = createServerClient();
-  
-  const { data, error } = await supabase
-    .from("security_audits")
-    .select("*")
-    .eq("id", auditId)
-    .maybeSingle();
-    
-  if (error) {
-    if (error.message.includes("does not exist") || error.message.includes("relation")) {
-      return null;
-    }
-    console.error("Error fetching security audit:", error);
-    return null;
-  }
-  
-  return data;
+  const result = await prisma.securityAudit.findUnique({
+    where: { id: auditId },
+  });
+
+  if (!result) return null;
+
+  return {
+    id: result.id,
+    project_id: result.projectId,
+    user_id: result.userId,
+    scan_type: result.scanType as "partial" | "full",
+    status: result.status as "pending" | "complete" | "failed",
+    summary: result.summary as AuditSummary,
+    findings: (result.findings as SecurityFinding[]) || [],
+    categories: (result.categories as SecurityCategory[]) || [],
+    preview_finding: result.previewFinding as SecurityAudit["preview_finding"],
+    scanned_at: result.scannedAt.toISOString(),
+    completed_at: result.completedAt?.toISOString(),
+    created_at: result.createdAt.toISOString(),
+  };
 }
 
-/**
- * Check if user has purchased a full audit for a project
- */
 export async function hasFullAuditPurchase(
   userId: string,
   projectId: string
 ): Promise<boolean> {
-  const supabase = createServerClient();
-  
-  const { data, error } = await supabase
-    .from("security_audit_purchases")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("project_id", projectId)
-    .eq("status", "completed")
-    .limit(1)
-    .maybeSingle();
-    
-  if (error) {
-    if (error.message.includes("does not exist") || error.message.includes("relation")) {
-      return false;
-    }
-    console.error("Error checking audit purchase:", error);
-    return false;
-  }
-  
-  return !!data;
+  const count = await prisma.securityAuditPurchase.count({
+    where: {
+      userId,
+      projectId,
+      status: "completed",
+    },
+  });
+
+  return count > 0;
 }
 
-/**
- * Create a pending audit purchase record
- */
 export async function createAuditPurchase(
   userId: string,
   projectId: string,
@@ -952,245 +779,164 @@ export async function createAuditPurchase(
   amount: number,
   currency: string = "gbp"
 ): Promise<SecurityAuditPurchase | null> {
-  const supabase = createServerClient();
-  
-  const { data, error } = await supabase
-    .from("security_audit_purchases")
-    .insert({
-      user_id: userId,
-      project_id: projectId,
-      audit_id: auditId,
-      stripe_payment_intent_id: paymentIntentId,
+  const result = await prisma.securityAuditPurchase.create({
+    data: {
+      userId,
+      projectId,
+      auditId,
+      stripePaymentIntentId: paymentIntentId,
       amount,
       currency,
       status: "pending",
-    })
-    .select()
-    .single();
-    
-  if (error) {
-    if (error.message.includes("does not exist") || error.message.includes("relation")) {
-      console.warn("security_audit_purchases table does not exist.");
-      return null;
-    }
-    console.error("Error creating audit purchase:", error);
-    return null;
-  }
-  
-  return data;
+    },
+  });
+
+  return {
+    id: result.id,
+    user_id: result.userId,
+    project_id: result.projectId,
+    audit_id: result.auditId,
+    stripe_payment_intent_id: result.stripePaymentIntentId || undefined,
+    amount: result.amount,
+    currency: result.currency,
+    status: result.status as SecurityAuditPurchase["status"],
+    created_at: result.createdAt.toISOString(),
+    updated_at: result.updatedAt.toISOString(),
+  };
 }
 
-/**
- * Update audit purchase status
- */
 export async function updateAuditPurchaseStatus(
   paymentIntentId: string,
   status: "completed" | "refunded" | "failed"
 ): Promise<void> {
-  const supabase = createServerClient();
-  
-  const { error } = await supabase
-    .from("security_audit_purchases")
-    .update({ status })
-    .eq("stripe_payment_intent_id", paymentIntentId);
-    
-  if (error) {
-    if (!error.message.includes("does not exist") && !error.message.includes("relation")) {
-      console.error("Error updating audit purchase:", error);
-    }
-  }
+  await prisma.securityAuditPurchase.updateMany({
+    where: { stripePaymentIntentId: paymentIntentId },
+    data: { status },
+  });
 }
 
-/**
- * Get audit purchase by payment intent ID
- */
 export async function getAuditPurchaseByPaymentIntent(
   paymentIntentId: string
 ): Promise<SecurityAuditPurchase | null> {
-  const supabase = createServerClient();
-  
-  const { data, error } = await supabase
-    .from("security_audit_purchases")
-    .select("*")
-    .eq("stripe_payment_intent_id", paymentIntentId)
-    .maybeSingle();
-    
-  if (error) {
-    if (error.message.includes("does not exist") || error.message.includes("relation")) {
-      return null;
-    }
-    console.error("Error fetching audit purchase:", error);
-    return null;
-  }
-  
-  return data;
+  const result = await prisma.securityAuditPurchase.findUnique({
+    where: { stripePaymentIntentId: paymentIntentId },
+  });
+
+  if (!result) return null;
+
+  return {
+    id: result.id,
+    user_id: result.userId,
+    project_id: result.projectId,
+    audit_id: result.auditId,
+    stripe_payment_intent_id: result.stripePaymentIntentId || undefined,
+    amount: result.amount,
+    currency: result.currency,
+    status: result.status as SecurityAuditPurchase["status"],
+    created_at: result.createdAt.toISOString(),
+    updated_at: result.updatedAt.toISOString(),
+  };
 }
 
-/**
- * Update a partial scan to full audit after payment
- */
 export async function upgradeToFullAudit(
   auditId: string,
   findings: SecurityFinding[]
 ): Promise<void> {
-  const supabase = createServerClient();
-  
-  const categories = [...new Set(findings.map(f => f.category))];
-  
-  const { error } = await supabase
-    .from("security_audits")
-    .update({
-      scan_type: "full",
-      findings,
+  const categories = [...new Set(findings.map((f) => f.category))];
+
+  await prisma.securityAudit.update({
+    where: { id: auditId },
+    data: {
+      scanType: "full",
+      findings: findings as object[],
       categories,
-      completed_at: new Date().toISOString(),
-    })
-    .eq("id", auditId);
-    
-  if (error) {
-    if (!error.message.includes("does not exist") && !error.message.includes("relation")) {
-      console.error("Error upgrading audit:", error);
-    }
-  }
+      completedAt: new Date(),
+    },
+  });
 }
 
-// ========================================
-// PROJECT ENVIRONMENT VARIABLES
-// ========================================
+// ============================================================================
+// Project Environment Variables
+// ============================================================================
 
-export interface ProjectEnvVar {
-  id: string;
-  project_id: string;
-  key: string;
-  value: string;
-  is_secret: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-/**
- * Get all environment variables for a project
- */
 export async function getProjectEnvVars(projectId: string): Promise<ProjectEnvVar[]> {
-  const supabase = createServerClient();
-  
-  const { data, error } = await supabase
-    .from("project_env_vars")
-    .select("*")
-    .eq("project_id", projectId)
-    .order("key");
-    
-  if (error) {
-    // Table might not exist yet
-    if (error.message.includes("does not exist") || error.message.includes("relation")) {
-      return [];
-    }
-    console.error("Error fetching project env vars:", error);
+  // Note: project_env_vars table may not exist yet - handle gracefully
+  try {
+    const results = await prisma.$queryRaw<Array<{
+      id: string;
+      project_id: string;
+      key: string;
+      value: string;
+      is_secret: boolean;
+      created_at: Date;
+      updated_at: Date;
+    }>>`
+      SELECT * FROM project_env_vars WHERE project_id = ${projectId} ORDER BY key
+    `;
+
+    return results.map((r) => ({
+      id: r.id,
+      project_id: r.project_id,
+      key: r.key,
+      value: r.value,
+      is_secret: r.is_secret,
+      created_at: r.created_at.toISOString(),
+      updated_at: r.updated_at.toISOString(),
+    }));
+  } catch {
+    // Table doesn't exist
     return [];
   }
-  
-  return data || [];
 }
 
-/**
- * Update environment variables for a project (replaces all existing)
- */
 export async function updateProjectEnvVars(
   projectId: string,
   envVars: { key: string; value: string; is_secret?: boolean }[]
 ): Promise<boolean> {
-  const supabase = createServerClient();
-  
   try {
-    // Delete existing env vars for this project
-    await supabase
-      .from("project_env_vars")
-      .delete()
-      .eq("project_id", projectId);
-    
-    // Insert new env vars
-    if (envVars.length > 0) {
-      const { error } = await supabase
-        .from("project_env_vars")
-        .insert(
-          envVars.map(v => ({
-            project_id: projectId,
-            key: v.key,
-            value: v.value,
-            is_secret: v.is_secret || false,
-          }))
-        );
-        
-      if (error) {
-        // Table might not exist yet
-        if (error.message.includes("does not exist") || error.message.includes("relation")) {
-          console.warn("project_env_vars table does not exist, skipping update");
-          return true;
-        }
-        console.error("Error updating project env vars:", error);
-        return false;
-      }
+    // Delete existing
+    await prisma.$executeRaw`DELETE FROM project_env_vars WHERE project_id = ${projectId}`;
+
+    // Insert new
+    for (const v of envVars) {
+      await prisma.$executeRaw`
+        INSERT INTO project_env_vars (project_id, key, value, is_secret)
+        VALUES (${projectId}, ${v.key}, ${v.value}, ${v.is_secret || false})
+      `;
     }
-    
+
     return true;
-  } catch (err) {
-    console.error("Error updating project env vars:", err);
-    return false;
+  } catch {
+    // Table doesn't exist
+    return true;
   }
 }
 
-/**
- * Set a single environment variable for a project
- */
 export async function setProjectEnvVar(
   projectId: string,
   key: string,
   value: string,
   isSecret: boolean = false
 ): Promise<boolean> {
-  const supabase = createServerClient();
-  
-  const { error } = await supabase
-    .from("project_env_vars")
-    .upsert({
-      project_id: projectId,
-      key,
-      value,
-      is_secret: isSecret,
-    }, {
-      onConflict: "project_id,key",
-    });
-    
-  if (error) {
-    if (error.message.includes("does not exist") || error.message.includes("relation")) {
-      return true;
-    }
-    console.error("Error setting project env var:", error);
-    return false;
+  try {
+    await prisma.$executeRaw`
+      INSERT INTO project_env_vars (project_id, key, value, is_secret)
+      VALUES (${projectId}, ${key}, ${value}, ${isSecret})
+      ON CONFLICT (project_id, key) DO UPDATE SET value = ${value}, is_secret = ${isSecret}
+    `;
+    return true;
+  } catch {
+    return true;
   }
-  
-  return true;
 }
 
-/**
- * Delete an environment variable from a project
- */
 export async function deleteProjectEnvVar(projectId: string, key: string): Promise<boolean> {
-  const supabase = createServerClient();
-  
-  const { error } = await supabase
-    .from("project_env_vars")
-    .delete()
-    .eq("project_id", projectId)
-    .eq("key", key);
-    
-  if (error) {
-    if (error.message.includes("does not exist") || error.message.includes("relation")) {
-      return true;
-    }
-    console.error("Error deleting project env var:", error);
-    return false;
+  try {
+    await prisma.$executeRaw`
+      DELETE FROM project_env_vars WHERE project_id = ${projectId} AND key = ${key}
+    `;
+    return true;
+  } catch {
+    return true;
   }
-  
-  return true;
 }

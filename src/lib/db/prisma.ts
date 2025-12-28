@@ -1,34 +1,23 @@
 /**
- * Prisma Client Singleton
+ * Prisma Client
  * 
- * This file creates a single instance of Prisma Client that can be
- * imported throughout the application. In development, it prevents
- * creating multiple instances due to hot reloading.
+ * Provides a singleton Prisma client for database access.
  */
 
 import { PrismaClient } from "@prisma/client";
 
-// Declare global type for Prisma in development
-declare global {
-  // eslint-disable-next-line no-var
-  var prisma: PrismaClient | undefined;
-}
-
-// Create Prisma instance
-const prismaClientSingleton = () => {
-  return new PrismaClient({
-    log: process.env.NODE_ENV === "development" 
-      ? ["query", "error", "warn"] 
-      : ["error"],
-  });
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
 };
 
-// Use global instance in development to prevent multiple connections
-const prisma = globalThis.prisma ?? prismaClientSingleton();
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
+  });
 
 if (process.env.NODE_ENV !== "production") {
-  globalThis.prisma = prisma;
+  globalForPrisma.prisma = prisma;
 }
 
-export { prisma };
 export default prisma;
