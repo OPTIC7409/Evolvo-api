@@ -1,13 +1,18 @@
 /**
- * NextAuth Configuration
+ * NextAuth Configuration - Backend API
  * 
  * Handles authentication with Google and GitHub OAuth providers.
+ * This is the ONLY place where OAuth should be handled - the frontend
+ * proxies all auth requests here for security.
  */
 
 import { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import GitHubProvider from "next-auth/providers/github";
 import { getOrCreateUser, getUserSubscription } from "@/lib/db/supabase";
+
+// Frontend URL for redirects after auth
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
 // Extend the default session type
 declare module "next-auth" {
@@ -49,9 +54,59 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   
+  // Use frontend URLs for sign-in pages (user will be on frontend)
   pages: {
-    signIn: "/login",
-    error: "/login",
+    signIn: `${FRONTEND_URL}/login`,
+    error: `${FRONTEND_URL}/login`,
+  },
+  
+  // Cookie configuration for cross-origin usage
+  cookies: {
+    sessionToken: {
+      name: process.env.NODE_ENV === "production" 
+        ? "__Secure-next-auth.session-token"
+        : "next-auth.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+        // Don't set domain - let the browser handle it for both origins
+      },
+    },
+    callbackUrl: {
+      name: process.env.NODE_ENV === "production"
+        ? "__Secure-next-auth.callback-url"
+        : "next-auth.callback-url",
+      options: {
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+    csrfToken: {
+      name: process.env.NODE_ENV === "production"
+        ? "__Host-next-auth.csrf-token"
+        : "next-auth.csrf-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+    state: {
+      name: process.env.NODE_ENV === "production"
+        ? "__Secure-next-auth.state"
+        : "next-auth.state",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+        maxAge: 60 * 15, // 15 minutes
+      },
+    },
   },
   
   session: {
@@ -60,6 +115,24 @@ export const authOptions: NextAuthOptions = {
   },
   
   callbacks: {
+    async redirect({ url, baseUrl }) {
+      // Allow redirects to the frontend URL
+      if (url.startsWith(FRONTEND_URL)) {
+        return url;
+      }
+      // Allow relative URLs
+      if (url.startsWith("/")) {
+        return `${FRONTEND_URL}${url}`;
+      }
+      // Allow backend URLs
+      if (url.startsWith(baseUrl)) {
+        // Redirect backend URLs to frontend
+        return url.replace(baseUrl, FRONTEND_URL);
+      }
+      // Default to frontend
+      return FRONTEND_URL;
+    },
+    
     async signIn({ user, account }) {
       // For GitHub users without public email, use their GitHub ID as identifier
       if (!user.email && account?.provider === "github") {

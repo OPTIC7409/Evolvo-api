@@ -14,6 +14,8 @@ import {
   updateAuditPurchaseStatus,
   getAuditPurchaseByPaymentIntent,
 } from "@/lib/db/supabase";
+import { sendPaymentFailedEmail, sendSubscriptionCanceledEmail } from "@/lib/email";
+import { logPaymentEvent, logError } from "@/lib/logger";
 import Stripe from "stripe";
 
 // Disable body parsing for webhook signature verification
@@ -247,7 +249,10 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   const user = await getUserByStripeCustomerId(customerId);
   
   if (!user) {
-    console.error(`No user found for Stripe customer: ${customerId}`);
+    logError(new Error(`No user found for Stripe customer: ${customerId}`), {
+      context: "stripe_webhook",
+      event: "subscription_deleted",
+    });
     return;
   }
   
@@ -260,7 +265,33 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     cancel_at_period_end: false,
   });
   
-  console.log(`Subscription canceled for user ${user.email}, downgraded to free`);
+  logPaymentEvent("subscription_canceled", {
+    userId: user.id,
+    customerId,
+    subscriptionId: subscription.id,
+  });
+  
+  // Send cancellation email
+  const endDate = subscription.current_period_end
+    ? new Date(subscription.current_period_end * 1000).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+    : "immediately";
+  
+  const emailResult = await sendSubscriptionCanceledEmail(
+    user.email,
+    user.name || "there",
+    endDate
+  );
+  
+  if (!emailResult.success) {
+    logError(new Error(`Failed to send subscription canceled email: ${emailResult.error}`), {
+      context: "email",
+      userId: user.id,
+    });
+  }
 }
 
 /**
@@ -272,7 +303,10 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
   const user = await getUserByStripeCustomerId(customerId);
   
   if (!user) {
-    console.error(`No user found for Stripe customer: ${customerId}`);
+    logError(new Error(`No user found for Stripe customer: ${customerId}`), {
+      context: "stripe_webhook",
+      event: "payment_failed",
+    });
     return;
   }
   
@@ -280,9 +314,31 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
     status: "past_due",
   });
   
-  console.log(`Payment failed for user ${user.email}`);
+  logPaymentEvent("payment_failed", {
+    userId: user.id,
+    customerId,
+    invoiceId: invoice.id,
+    amountDue: invoice.amount_due,
+  });
   
-  // TODO: Send email notification about failed payment
+  // Send email notification about failed payment
+  const amount = new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: invoice.currency?.toUpperCase() || "GBP",
+  }).format((invoice.amount_due || 0) / 100);
+  
+  const emailResult = await sendPaymentFailedEmail(
+    user.email,
+    user.name || "there",
+    amount
+  );
+  
+  if (!emailResult.success) {
+    logError(new Error(`Failed to send payment failed email: ${emailResult.error}`), {
+      context: "email",
+      userId: user.id,
+    });
+  }
 }
 
 /**
