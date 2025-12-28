@@ -145,7 +145,8 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   }
   
   // Get subscription details from Stripe
-  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId) as any;
   const priceId = subscription.items.data[0]?.price.id;
   const tier = getTierFromPriceId(priceId) || "pro";
   
@@ -159,8 +160,8 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     stripePriceId: priceId,
     status: "active",
     tier: tier,
-    currentPeriodStart: new Date(subscription.current_period_start * 1000),
-    currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+    currentPeriodStart: new Date((subscription.current_period_start || Date.now() / 1000) * 1000),
+    currentPeriodEnd: new Date((subscription.current_period_end || Date.now() / 1000 + 30 * 24 * 60 * 60) * 1000),
     cancelAtPeriodEnd: subscription.cancel_at_period_end,
   };
     
@@ -186,7 +187,9 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 /**
  * Handle subscription updates
  */
-async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
+async function handleSubscriptionUpdated(stripeSubscription: Stripe.Subscription) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const subscription = stripeSubscription as any;
   const customerId = subscription.customer as string;
   const priceId = subscription.items.data[0]?.price.id;
   const tier = getTierFromPriceId(priceId) || "pro";
@@ -219,13 +222,20 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
       break;
   }
   
+  const periodStart = subscription.current_period_start 
+    ? new Date(subscription.current_period_start * 1000).toISOString()
+    : new Date().toISOString();
+  const periodEnd = subscription.current_period_end
+    ? new Date(subscription.current_period_end * 1000).toISOString()
+    : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  
   await updateSubscription(user.id, {
     stripe_subscription_id: subscription.id,
     stripe_price_id: priceId,
     status: status,
     tier: tier,
-    current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-    current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+    current_period_start: periodStart,
+    current_period_end: periodEnd,
     cancel_at_period_end: subscription.cancel_at_period_end,
   });
   
@@ -235,7 +245,9 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
 /**
  * Handle subscription deletion/cancellation
  */
-async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
+async function handleSubscriptionDeleted(stripeSubscription: Stripe.Subscription) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const subscription = stripeSubscription as any;
   const customerId = subscription.customer as string;
   
   const user = await getUserByStripeCustomerId(customerId);

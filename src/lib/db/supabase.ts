@@ -6,6 +6,7 @@
  */
 
 import prisma from "./prisma";
+import { Prisma } from "@prisma/client";
 
 // ============================================================================
 // Type Exports (for backwards compatibility)
@@ -418,8 +419,8 @@ export async function getProjectMessages(projectId: string): Promise<ProjectMess
     type: m.type as "user" | "assistant",
     content: m.content,
     timestamp: Number(m.timestamp),
-    tool_calls: (m.toolCalls as ToolCall[]) || [],
-    saved_files: (m.savedFiles as string[]) || [],
+    tool_calls: (m.toolCalls as unknown as ToolCall[]) || [],
+    saved_files: (m.savedFiles as unknown as string[]) || [],
     created_at: m.createdAt.toISOString(),
   }));
 }
@@ -444,8 +445,8 @@ export async function saveProjectMessage(
     },
     update: {
       content: message.content,
-      toolCalls: message.toolCalls || [],
-      savedFiles: message.savedFiles || [],
+      toolCalls: (message.toolCalls || []) as unknown as Prisma.InputJsonValue,
+      savedFiles: (message.savedFiles || []) as unknown as Prisma.InputJsonValue,
     },
     create: {
       projectId,
@@ -453,8 +454,8 @@ export async function saveProjectMessage(
       type: message.type,
       content: message.content,
       timestamp: BigInt(message.timestamp),
-      toolCalls: message.toolCalls || [],
-      savedFiles: message.savedFiles || [],
+      toolCalls: (message.toolCalls || []) as unknown as Prisma.InputJsonValue,
+      savedFiles: (message.savedFiles || []) as unknown as Prisma.InputJsonValue,
     },
   });
 
@@ -465,8 +466,8 @@ export async function saveProjectMessage(
     type: result.type as "user" | "assistant",
     content: result.content,
     timestamp: Number(result.timestamp),
-    tool_calls: (result.toolCalls as ToolCall[]) || [],
-    saved_files: (result.savedFiles as string[]) || [],
+    tool_calls: (result.toolCalls as unknown as ToolCall[]) || [],
+    saved_files: (result.savedFiles as unknown as string[]) || [],
     created_at: result.createdAt.toISOString(),
   };
 }
@@ -480,16 +481,18 @@ export async function updateProjectMessage(
     savedFiles?: string[];
   }
 ): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data: any = {};
+  if (updates.content !== undefined) data.content = updates.content;
+  if (updates.toolCalls !== undefined) data.toolCalls = updates.toolCalls;
+  if (updates.savedFiles !== undefined) data.savedFiles = updates.savedFiles;
+
   await prisma.projectMessage.updateMany({
     where: {
       projectId,
       messageId,
     },
-    data: {
-      content: updates.content,
-      toolCalls: updates.toolCalls,
-      savedFiles: updates.savedFiles,
-    },
+    data,
   });
 }
 
@@ -646,7 +649,7 @@ export async function savePartialScan(
       summary: scan.summary as object,
       findings: [],
       categories: scan.categories,
-      previewFinding: scan.previewFinding as object || null,
+      previewFinding: scan.previewFinding ? (scan.previewFinding as object) : Prisma.JsonNull,
       scannedAt: new Date(scan.scannedAt),
       completedAt: new Date(scan.scannedAt),
     },
@@ -658,9 +661,9 @@ export async function savePartialScan(
     user_id: result.userId,
     scan_type: result.scanType as "partial" | "full",
     status: result.status as "pending" | "complete" | "failed",
-    summary: result.summary as AuditSummary,
-    findings: (result.findings as SecurityFinding[]) || [],
-    categories: (result.categories as SecurityCategory[]) || [],
+    summary: result.summary as unknown as AuditSummary,
+    findings: (result.findings as unknown as SecurityFinding[]) || [],
+    categories: (result.categories as unknown as SecurityCategory[]) || [],
     preview_finding: result.previewFinding as SecurityAudit["preview_finding"],
     scanned_at: result.scannedAt.toISOString(),
     completed_at: result.completedAt?.toISOString(),
@@ -681,7 +684,7 @@ export async function saveFullAudit(
       summary: audit.summary as object,
       findings: audit.findings as object[],
       categories: [...new Set(audit.findings.map((f) => f.category))],
-      previewFinding: null,
+      previewFinding: Prisma.JsonNull,
       scannedAt: new Date(audit.scannedAt),
       completedAt: audit.completedAt ? new Date(audit.completedAt) : null,
     },
@@ -693,9 +696,9 @@ export async function saveFullAudit(
     user_id: result.userId,
     scan_type: result.scanType as "partial" | "full",
     status: result.status as "pending" | "complete" | "failed",
-    summary: result.summary as AuditSummary,
-    findings: (result.findings as SecurityFinding[]) || [],
-    categories: (result.categories as SecurityCategory[]) || [],
+    summary: result.summary as unknown as AuditSummary,
+    findings: (result.findings as unknown as SecurityFinding[]) || [],
+    categories: (result.categories as unknown as SecurityCategory[]) || [],
     preview_finding: undefined,
     scanned_at: result.scannedAt.toISOString(),
     completed_at: result.completedAt?.toISOString(),
@@ -723,9 +726,9 @@ export async function getLatestSecurityAudit(
     user_id: result.userId,
     scan_type: result.scanType as "partial" | "full",
     status: result.status as "pending" | "complete" | "failed",
-    summary: result.summary as AuditSummary,
-    findings: (result.findings as SecurityFinding[]) || [],
-    categories: (result.categories as SecurityCategory[]) || [],
+    summary: result.summary as unknown as AuditSummary,
+    findings: (result.findings as unknown as SecurityFinding[]) || [],
+    categories: (result.categories as unknown as SecurityCategory[]) || [],
     preview_finding: result.previewFinding as SecurityAudit["preview_finding"],
     scanned_at: result.scannedAt.toISOString(),
     completed_at: result.completedAt?.toISOString(),
@@ -746,9 +749,9 @@ export async function getSecurityAudit(auditId: string): Promise<SecurityAudit |
     user_id: result.userId,
     scan_type: result.scanType as "partial" | "full",
     status: result.status as "pending" | "complete" | "failed",
-    summary: result.summary as AuditSummary,
-    findings: (result.findings as SecurityFinding[]) || [],
-    categories: (result.categories as SecurityCategory[]) || [],
+    summary: result.summary as unknown as AuditSummary,
+    findings: (result.findings as unknown as SecurityFinding[]) || [],
+    categories: (result.categories as unknown as SecurityCategory[]) || [],
     preview_finding: result.previewFinding as SecurityAudit["preview_finding"],
     scanned_at: result.scannedAt.toISOString(),
     completed_at: result.completedAt?.toISOString(),

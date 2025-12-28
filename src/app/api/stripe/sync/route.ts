@@ -74,10 +74,16 @@ export async function POST(request: Request) {
       });
     }
     
-    const subscription = subscriptions.data[0];
+    // Cast to any to access period properties (Stripe types vary by version)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const subscription = subscriptions.data[0] as any;
     const priceId = subscription.items.data[0]?.price.id;
     // Use price ID to determine tier, fallback to URL hint, then default to "pro"
     const tier = getTierFromPriceId(priceId) || (tierHint as "pro" | "enterprise") || "pro";
+    
+    // Get period timestamps
+    const currentPeriodStart = subscription.current_period_start;
+    const currentPeriodEnd = subscription.current_period_end;
     
     console.log("Stripe subscription data:", {
       id: subscription.id,
@@ -85,16 +91,16 @@ export async function POST(request: Request) {
       priceId,
       tier,
       tierHint,
-      current_period_start: subscription.current_period_start,
-      current_period_end: subscription.current_period_end,
+      current_period_start: currentPeriodStart,
+      current_period_end: currentPeriodEnd,
     });
     
     // Safely convert Stripe timestamps to dates
-    const periodStart = subscription.current_period_start 
-      ? new Date(subscription.current_period_start * 1000)
+    const periodStart = currentPeriodStart 
+      ? new Date(currentPeriodStart * 1000)
       : new Date();
-    const periodEnd = subscription.current_period_end
-      ? new Date(subscription.current_period_end * 1000)
+    const periodEnd = currentPeriodEnd
+      ? new Date(currentPeriodEnd * 1000)
       : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Default to 30 days from now
     
     // First check if subscription record exists
