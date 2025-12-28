@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "description": "Evolvo API - Backend services for the Evolvo AI app builder",
   "scripts": {
-    "dev": "next dev -p 3001",
+    "dev": "next dev -p 4100",
     "build": "prisma generate && prisma migrate deploy && next build",
-    "start": "next start -p 3001",
+    "start": "next start -p 4100",
     "lint": "eslint .",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
