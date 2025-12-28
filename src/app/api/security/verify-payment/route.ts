@@ -16,8 +16,11 @@ import {
   getProject,
   getProjectFiles,
   saveFullAudit,
-  createServerClient,
+  hasFullAuditPurchase,
+  createAuditPurchase,
+  updateAuditPurchaseStatus,
 } from "@/lib/db/supabase";
+import prisma from "@/lib/db/prisma";
 
 export const runtime = "nodejs";
 
@@ -64,37 +67,26 @@ export async function POST(request: Request) {
       );
     }
     
-    const supabase = createServerClient();
-    
     // Try to find purchase in database first
     let purchaseVerified = false;
     let stripeSessionId: string | null = null;
     
-    // Check for pending purchase
-    const { data: purchase, error: purchaseError } = await supabase
-      .from("security_audit_purchases")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("project_id", body.projectId)
-      .eq("status", "pending")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
+    // Check for pending purchase using Prisma
+    const purchase = await prisma.securityAuditPurchase.findFirst({
+      where: {
+        userId: user.id,
+        projectId: body.projectId,
+        status: "pending",
+      },
+      orderBy: { createdAt: "desc" },
+    });
     
     if (purchase) {
-      stripeSessionId = purchase.stripe_payment_intent_id;
+      stripeSessionId = purchase.stripePaymentIntentId;
     } else {
       // Check if already completed
-      const { data: completedPurchase } = await supabase
-        .from("security_audit_purchases")
-        .select("*")
-        .eq("user_id", user.id)
-        .eq("project_id", body.projectId)
-        .eq("status", "completed")
-        .limit(1)
-        .single();
-      
-      if (completedPurchase) {
+      const alreadyPurchased = await hasFullAuditPurchase(user.id, body.projectId);
+      if (alreadyPurchased) {
         purchaseVerified = true;
       }
     }
@@ -109,10 +101,7 @@ export async function POST(request: Request) {
           
           // Update purchase status
           if (purchase) {
-            await supabase
-              .from("security_audit_purchases")
-              .update({ status: "completed" })
-              .eq("id", purchase.id);
+            await updateAuditPurchaseStatus(stripeSessionId, "completed");
           }
         }
       } catch (stripeError) {
@@ -125,15 +114,15 @@ export async function POST(request: Request) {
       console.log("No purchase record found, checking Stripe directly...");
       
       try {
-        // List recent checkout sessions for this email
+        // List recent checkout sessions
         const sessions = await stripe.checkout.sessions.list({
-          customer_email: session.user.email,
-          limit: 10,
+          limit: 100,
         });
         
-        // Find a paid session for this project
+        // Find a paid session for this project and email
         const matchingSession = sessions.data.find(s => 
           s.payment_status === "paid" && 
+          s.customer_email === session.user.email &&
           s.metadata?.type === "security_audit" &&
           s.metadata?.projectId === body.projectId
         );
@@ -144,19 +133,17 @@ export async function POST(request: Request) {
           
           // Create the missing purchase record
           try {
-            await supabase
-              .from("security_audit_purchases")
-              .insert({
-                user_id: user.id,
-                project_id: body.projectId,
-                audit_id: matchingSession.metadata?.auditId || body.projectId,
-                stripe_payment_intent_id: matchingSession.id,
-                amount: matchingSession.amount_total || 1499,
-                currency: "gbp",
-                status: "completed",
-              });
+            await createAuditPurchase(
+              user.id,
+              body.projectId,
+              matchingSession.metadata?.auditId || body.projectId,
+              matchingSession.id,
+              matchingSession.amount_total || 1499,
+              "gbp"
+            );
+            // Mark it as completed
+            await updateAuditPurchaseStatus(matchingSession.id, "completed");
           } catch (insertError) {
-            // Table might not exist - that's ok, we can still proceed
             console.warn("Could not create purchase record:", insertError);
           }
         }
@@ -192,7 +179,7 @@ export async function POST(request: Request) {
     // Run the full security audit
     const audit = runFullAudit(body.projectId, files, packageJson);
     
-    // Save the audit result (might fail if table doesn't exist)
+    // Save the audit result
     try {
       await saveFullAudit(user.id, audit);
     } catch (saveError) {

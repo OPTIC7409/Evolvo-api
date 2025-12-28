@@ -16,7 +16,6 @@ import {
   getProjectFiles,
   saveFullAudit,
   createAuditPurchase,
-  createServerClient,
 } from "@/lib/db/supabase";
 
 export const runtime = "nodejs";
@@ -90,17 +89,15 @@ export async function POST(request: Request) {
     // Save the audit result
     await saveFullAudit(user.id, audit);
     
-    // Create a fake completed purchase record for dev
-    const supabase = createServerClient();
-    await supabase.from("security_audit_purchases").insert({
-      user_id: user.id,
-      project_id: projectId,
-      audit_id: audit.id,
-      stripe_payment_intent_id: `dev_bypass_${Date.now()}`,
-      amount: 0,
-      currency: "gbp",
-      status: "completed",
-    });
+    // Create a fake completed purchase record for dev using helper function
+    await createAuditPurchase(
+      user.id,
+      projectId,
+      audit.id,
+      `dev_bypass_${Date.now()}`,
+      0,
+      "gbp"
+    );
     
     return NextResponse.json({
       success: true,

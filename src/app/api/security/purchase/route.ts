@@ -19,6 +19,7 @@ import {
   getLatestSecurityAudit,
   hasFullAuditPurchase,
   createAuditPurchase,
+  updateUserStripeCustomerId,
 } from "@/lib/db/supabase";
 
 export const runtime = "nodejs";
@@ -98,12 +99,7 @@ export async function POST(request: Request) {
     
     // Update user with Stripe customer ID if new
     if (!user.stripe_customer_id) {
-      const { createServerClient } = await import("@/lib/db/supabase");
-      const supabase = createServerClient();
-      await supabase
-        .from("users")
-        .update({ stripe_customer_id: customerId })
-        .eq("id", user.id);
+      await updateUserStripeCustomerId(user.id, customerId);
     }
     
     // Create payment intent
