@@ -125,13 +125,17 @@ export function createBrowserClient() {
 /**
  * Server-side Supabase client with service role (bypasses RLS)
  * Use this in API routes and server actions
+ * 
+ * Note: Returns `any` typed client to allow dynamic table access
+ * without needing to define every table in the Database interface.
  */
-export function createServerClient() {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function createServerClient(): any {
   if (!supabaseUrl || !supabaseServiceKey) {
     throw new Error("Missing Supabase environment variables for server");
   }
   
-  return createClient<Database>(supabaseUrl, supabaseServiceKey, {
+  return createClient(supabaseUrl, supabaseServiceKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
