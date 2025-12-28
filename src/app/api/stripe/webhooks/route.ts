@@ -10,10 +10,9 @@ import { stripe, getTierFromPriceId } from "@/lib/stripe/config";
 import { 
   getUserByStripeCustomerId, 
   updateSubscription,
-  createServerClient,
   updateAuditPurchaseStatus,
-  getAuditPurchaseByPaymentIntent,
 } from "@/lib/db/supabase";
+import prisma from "@/lib/db/prisma";
 import { sendPaymentFailedEmail, sendSubscriptionCanceledEmail } from "@/lib/email";
 import { logPaymentEvent, logError } from "@/lib/logger";
 import Stripe from "stripe";
@@ -150,41 +149,34 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const priceId = subscription.items.data[0]?.price.id;
   const tier = getTierFromPriceId(priceId) || "pro";
   
-  // Update user's subscription in database
-  const supabase = createServerClient();
-  
   // First check if subscription exists
-  const { data: existingSub } = await supabase
-    .from("subscriptions")
-    .select("*")
-    .eq("user_id", user.id)
-    .single();
+  const existingSub = await prisma.subscription.findFirst({
+    where: { userId: user.id },
+  });
+  
+  const subscriptionData = {
+    stripeSubscriptionId: subscriptionId,
+    stripePriceId: priceId,
+    status: "active",
+    tier: tier,
+    currentPeriodStart: new Date(subscription.current_period_start * 1000),
+    currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+    cancelAtPeriodEnd: subscription.cancel_at_period_end,
+  };
     
   if (existingSub) {
     // Update existing
-    await supabase
-      .from("subscriptions")
-      .update({
-        stripe_subscription_id: subscriptionId,
-        stripe_price_id: priceId,
-        status: "active",
-        tier: tier,
-        current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-        current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-        cancel_at_period_end: subscription.cancel_at_period_end,
-      })
-      .eq("user_id", user.id);
+    await prisma.subscription.update({
+      where: { id: existingSub.id },
+      data: subscriptionData,
+    });
   } else {
     // Create new
-    await supabase.from("subscriptions").insert({
-      user_id: user.id,
-      stripe_subscription_id: subscriptionId,
-      stripe_price_id: priceId,
-      status: "active",
-      tier: tier,
-      current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-      current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-      cancel_at_period_end: subscription.cancel_at_period_end,
+    await prisma.subscription.create({
+      data: {
+        userId: user.id,
+        ...subscriptionData,
+      },
     });
   }
   
@@ -398,14 +390,8 @@ async function handleSecurityAuditCheckout(session: Stripe.Checkout.Session) {
     return;
   }
   
-  const supabase = createServerClient();
-  
-  // Update the purchase record to completed
-  // We use session.id since that's what we stored in createAuditPurchase
-  await supabase
-    .from("security_audit_purchases")
-    .update({ status: "completed" })
-    .eq("stripe_payment_intent_id", session.id);
+  // Update the purchase record to completed using session.id
+  await updateAuditPurchaseStatus(session.id, "completed");
   
   console.log(`Security audit checkout completed for project: ${metadata.projectId}`);
 }

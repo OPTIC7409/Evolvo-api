@@ -9,11 +9,8 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { stripe, getTierFromPriceId } from "@/lib/stripe/config";
-import { 
-  getUserByEmail, 
-  updateSubscription,
-  createServerClient
-} from "@/lib/db/supabase";
+import { getUserByEmail, updateSubscription } from "@/lib/db/supabase";
+import prisma from "@/lib/db/prisma";
 
 export async function POST(request: Request) {
   try {
@@ -92,45 +89,42 @@ export async function POST(request: Request) {
       current_period_end: subscription.current_period_end,
     });
     
-    // Update database with subscription info
-    const supabase = createServerClient();
+    // Safely convert Stripe timestamps to dates
+    const periodStart = subscription.current_period_start 
+      ? new Date(subscription.current_period_start * 1000)
+      : new Date();
+    const periodEnd = subscription.current_period_end
+      ? new Date(subscription.current_period_end * 1000)
+      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Default to 30 days from now
     
     // First check if subscription record exists
-    const { data: existingSub } = await supabase
-      .from("subscriptions")
-      .select("*")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    
-    // Safely convert Stripe timestamps to ISO strings
-    const periodStart = subscription.current_period_start 
-      ? new Date(subscription.current_period_start * 1000).toISOString()
-      : new Date().toISOString();
-    const periodEnd = subscription.current_period_end
-      ? new Date(subscription.current_period_end * 1000).toISOString()
-      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // Default to 30 days from now
+    const existingSub = await prisma.subscription.findFirst({
+      where: { userId: user.id },
+    });
     
     const subscriptionData = {
-      stripe_subscription_id: subscription.id,
-      stripe_price_id: priceId,
-      status: "active" as const,
+      stripeSubscriptionId: subscription.id,
+      stripePriceId: priceId,
+      status: "active",
       tier: tier,
-      current_period_start: periodStart,
-      current_period_end: periodEnd,
-      cancel_at_period_end: subscription.cancel_at_period_end || false,
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end || false,
     };
     
     if (existingSub) {
       // Update existing
-      await supabase
-        .from("subscriptions")
-        .update(subscriptionData)
-        .eq("user_id", user.id);
+      await prisma.subscription.update({
+        where: { id: existingSub.id },
+        data: subscriptionData,
+      });
     } else {
       // Create new
-      await supabase.from("subscriptions").insert({
-        user_id: user.id,
-        ...subscriptionData,
+      await prisma.subscription.create({
+        data: {
+          userId: user.id,
+          ...subscriptionData,
+        },
       });
     }
     
