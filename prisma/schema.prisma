@@ -23,11 +23,13 @@ model User {
   createdAt        DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("updated_at") @db.Timestamptz(6)
 
-  accounts      Account[]
-  sessions      Session[]
-  subscriptions Subscription[]
-  usage         Usage[]
-  projects      Project[]
+  accounts            Account[]
+  sessions            Session[]
+  subscriptions       Subscription[]
+  usage               Usage[]
+  projects            Project[]
+  installedPlugins    UserInstalledPlugin[]
+  giftedSubscriptions GiftedSubscription[]
 
   @@map("users")
 }
@@ -224,4 +226,104 @@ model SecurityAuditPurchase {
   @@index([projectId], map: "idx_security_audit_purchases_project_id")
   @@index([stripePaymentIntentId], map: "idx_security_audit_purchases_payment_intent")
   @@map("security_audit_purchases")
+}
+
+// ============================================================================
+// Marketplace & Plugins
+// ============================================================================
+
+model MarketplaceItem {
+  id              String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  slug            String   @unique
+  name            String
+  description     String
+  longDescription String?  @map("long_description")
+  category        String   // 'plugins', 'templates', 'integrations', 'themes'
+  author          String
+  authorId        String?  @map("author_id") @db.Uuid // null for official/community
+  icon            String   // SVG path
+  version         String   @default("1.0.0")
+  downloads       Int      @default(0)
+  rating          Float    @default(0)
+  ratingCount     Int      @default(0) @map("rating_count")
+  verified        Boolean  @default(false)
+  published       Boolean  @default(false)
+  features        Json?    @default("[]")
+  requirements    Json?    @default("[]")
+  documentation   String?
+  repository      String?
+  config          Json?    @default("{}") // Plugin configuration schema
+  createdAt       DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("updated_at") @db.Timestamptz(6)
+
+  installations UserInstalledPlugin[]
+
+  @@index([category], map: "idx_marketplace_items_category")
+  @@index([published], map: "idx_marketplace_items_published")
+  @@index([authorId], map: "idx_marketplace_items_author")
+  @@map("marketplace_items")
+}
+
+model UserInstalledPlugin {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  itemId    String   @map("item_id") @db.Uuid
+  enabled   Boolean  @default(true)
+  settings  Json?    @default("{}")
+  createdAt DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("updated_at") @db.Timestamptz(6)
+
+  user User            @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  item MarketplaceItem @relation(fields: [itemId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([userId, itemId])
+  @@index([userId], map: "idx_user_installed_plugins_user")
+  @@index([itemId], map: "idx_user_installed_plugins_item")
+  @@map("user_installed_plugins")
+}
+
+// ============================================================================
+// Admin & Analytics
+// ============================================================================
+
+model AdminSession {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  email     String
+  token     String   @unique
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  createdAt DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("created_at") @db.Timestamptz(6)
+
+  @@index([token], map: "idx_admin_sessions_token")
+  @@index([email], map: "idx_admin_sessions_email")
+  @@map("admin_sessions")
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  eventType String   @map("event_type") // 'page_view', 'signup', 'subscription', 'plugin_install', etc.
+  eventData Json?    @default("{}") @map("event_data")
+  createdAt DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("created_at") @db.Timestamptz(6)
+
+  @@index([eventType], map: "idx_analytics_events_type")
+  @@index([userId], map: "idx_analytics_events_user")
+  @@index([createdAt], map: "idx_analytics_events_created")
+  @@map("analytics_events")
+}
+
+model GiftedSubscription {
+  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  giftedBy     String   @map("gifted_by") // admin email
+  tier         String
+  durationDays Int      @map("duration_days")
+  expiresAt    DateTime @map("expires_at") @db.Timestamptz(6)
+  note         String?
+  createdAt    DateTime @default(dbgenerated("timezone('utc'::text, now())")) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([userId], map: "idx_gifted_subscriptions_user")
+  @@index([expiresAt], map: "idx_gifted_subscriptions_expires")
+  @@map("gifted_subscriptions")
 }
