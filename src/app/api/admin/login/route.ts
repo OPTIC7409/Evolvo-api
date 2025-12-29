@@ -2,11 +2,12 @@
  * Admin Login API
  * 
  * Authenticates admin users via email verification against ADMIN_EMAILS env var.
- * Uses magic link style authentication - sends a verification code.
+ * Uses magic link style authentication - sends a verification code via email.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { sendAdminVerificationEmail } from "@/lib/email";
 import crypto from "crypto";
 
 // Get admin emails from environment
@@ -90,8 +91,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Generate a 6-digit verification code for simplicity
-    // In production, you might want to send this via email
+    // Generate a 6-digit verification code
     const verificationCode = Math.random().toString().slice(2, 8);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
@@ -104,19 +104,37 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    // In development, return the code. In production, send via email.
+    // Send verification email
+    const emailResult = await sendAdminVerificationEmail(normalizedEmail, verificationCode);
+    
+    if (!emailResult.success) {
+      console.error(`[Admin Login] Failed to send email to ${normalizedEmail}:`, emailResult.error);
+      // In development, still allow login by returning the code
+      if (process.env.NODE_ENV === "development") {
+        console.log(`[Admin Login] DEV MODE - Verification code for ${normalizedEmail}: ${verificationCode}`);
+        return NextResponse.json({
+          success: true,
+          message: "Email service unavailable - using dev mode",
+          devCode: verificationCode
+        });
+      }
+      return NextResponse.json(
+        { error: "Failed to send verification email" },
+        { status: 500 }
+      );
+    }
+
+    console.log(`[Admin Login] Verification code sent to ${normalizedEmail}`);
+    
+    // In development, also return the code for easier testing
     if (process.env.NODE_ENV === "development") {
-      console.log(`[Admin Login] Verification code for ${normalizedEmail}: ${verificationCode}`);
       return NextResponse.json({
         success: true,
-        message: "Verification code generated",
-        // Only include code in dev mode for testing
+        message: "Verification code sent to your email",
         devCode: verificationCode
       });
     }
 
-    // In production, you would send an email here
-    // For now, we'll just confirm the code was generated
     return NextResponse.json({
       success: true,
       message: "Verification code sent to your email"

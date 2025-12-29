@@ -105,6 +105,43 @@ const templates = {
       </div>
     `,
   }),
+
+  adminVerification: (code: string) => ({
+    subject: "Your Evolvo Admin Verification Code",
+    body: `
+      <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #0b0b0d;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h1 style="color: #00f0ff; margin: 0; font-size: 28px;">Evolvo Admin</h1>
+        </div>
+        
+        <div style="background: linear-gradient(180deg, rgba(30,31,37,0.9), rgba(20,21,26,0.95)); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 40px; text-align: center;">
+          <p style="color: #a8acb5; font-size: 14px; margin: 0 0 20px 0;">
+            Your verification code is:
+          </p>
+          
+          <div style="background: rgba(0,240,255,0.1); border: 1px solid rgba(0,240,255,0.3); border-radius: 12px; padding: 20px; margin: 0 auto; max-width: 200px;">
+            <p style="color: #00f0ff; font-size: 36px; font-weight: bold; letter-spacing: 8px; margin: 0; font-family: monospace;">
+              ${code}
+            </p>
+          </div>
+          
+          <p style="color: #6b7280; font-size: 12px; margin: 20px 0 0 0;">
+            This code expires in 10 minutes.
+          </p>
+        </div>
+        
+        <p style="color: #4a5568; font-size: 12px; text-align: center; margin-top: 30px;">
+          If you didn't request this code, you can safely ignore this email.
+        </p>
+        
+        <hr style="border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 30px 0;" />
+        
+        <p style="color: #4a5568; font-size: 11px; text-align: center;">
+          © ${new Date().getFullYear()} Evolvo. All rights reserved.
+        </p>
+      </div>
+    `,
+  }),
 };
 
 /**
@@ -166,7 +203,19 @@ export async function sendSubscriptionCanceledEmail(
   return sendEmail(email, template);
 }
 
+/**
+ * Send admin verification code
+ */
+export async function sendAdminVerificationEmail(
+  email: string,
+  code: string
+): Promise<{ success: boolean; error?: string }> {
+  const template = templates.adminVerification(code);
+  return sendEmail(email, template);
+}
+
 export default {
   sendPaymentFailedEmail,
   sendSubscriptionCanceledEmail,
+  sendAdminVerificationEmail,
 };
