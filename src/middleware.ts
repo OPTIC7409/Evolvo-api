@@ -38,7 +38,7 @@ export function middleware(request: NextRequest) {
         // MUST be specific origin, not "*", when using credentials
         "Access-Control-Allow-Origin": isAllowedOrigin && origin ? origin : FRONTEND_URL,
         "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization, Cookie, X-Requested-With",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Cookie, X-Requested-With, X-Admin-Token",
         "Access-Control-Allow-Credentials": "true",
         "Access-Control-Max-Age": "86400",
       },
