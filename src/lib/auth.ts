@@ -67,6 +67,8 @@ export const authOptions: NextAuthOptions = {
   
   // Cookie configuration for cross-origin usage
   // Set domain to .evolvo.xyz so cookies work across evolvo.xyz and api.evolvo.xyz
+  // IMPORTANT: SameSite=None is required for cross-origin fetch requests with credentials
+  // This allows the frontend (evolvo.xyz) to send cookies to the API (api.evolvo.xyz)
   cookies: {
     sessionToken: {
       name: process.env.NODE_ENV === "production" 
@@ -74,7 +76,9 @@ export const authOptions: NextAuthOptions = {
         : "next-auth.session-token",
       options: {
         httpOnly: true,
-        sameSite: "lax" as const,
+        // SameSite=None allows cookies on cross-origin requests (requires Secure=true)
+        // SameSite=Lax only sends cookies on top-level navigations, not fetch() requests
+        sameSite: process.env.NODE_ENV === "production" ? "none" as const : "lax" as const,
         path: "/",
         secure: process.env.NODE_ENV === "production",
         domain: process.env.NODE_ENV === "production" ? ".evolvo.xyz" : undefined,
@@ -85,7 +89,7 @@ export const authOptions: NextAuthOptions = {
         ? "__Secure-next-auth.callback-url"
         : "next-auth.callback-url",
       options: {
-        sameSite: "lax" as const,
+        sameSite: process.env.NODE_ENV === "production" ? "none" as const : "lax" as const,
         path: "/",
         secure: process.env.NODE_ENV === "production",
         domain: process.env.NODE_ENV === "production" ? ".evolvo.xyz" : undefined,
@@ -98,7 +102,7 @@ export const authOptions: NextAuthOptions = {
         : "next-auth.csrf-token",
       options: {
         httpOnly: true,
-        sameSite: "lax" as const,
+        sameSite: process.env.NODE_ENV === "production" ? "none" as const : "lax" as const,
         path: "/",
         secure: process.env.NODE_ENV === "production",
         domain: process.env.NODE_ENV === "production" ? ".evolvo.xyz" : undefined,
@@ -110,6 +114,7 @@ export const authOptions: NextAuthOptions = {
         : "next-auth.state",
       options: {
         httpOnly: true,
+        // State cookie can stay Lax since it's only used during OAuth flow redirects
         sameSite: "lax" as const,
         path: "/",
         secure: process.env.NODE_ENV === "production",
