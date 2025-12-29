@@ -66,6 +66,7 @@ export const authOptions: NextAuthOptions = {
   },
   
   // Cookie configuration for cross-origin usage
+  // Set domain to .evolvo.xyz so cookies work across evolvo.xyz and api.evolvo.xyz
   cookies: {
     sessionToken: {
       name: process.env.NODE_ENV === "production" 
@@ -73,10 +74,10 @@ export const authOptions: NextAuthOptions = {
         : "next-auth.session-token",
       options: {
         httpOnly: true,
-        sameSite: "lax",
+        sameSite: "lax" as const,
         path: "/",
         secure: process.env.NODE_ENV === "production",
-        // Don't set domain - let the browser handle it for both origins
+        domain: process.env.NODE_ENV === "production" ? ".evolvo.xyz" : undefined,
       },
     },
     callbackUrl: {
@@ -84,20 +85,23 @@ export const authOptions: NextAuthOptions = {
         ? "__Secure-next-auth.callback-url"
         : "next-auth.callback-url",
       options: {
-        sameSite: "lax",
+        sameSite: "lax" as const,
         path: "/",
         secure: process.env.NODE_ENV === "production",
+        domain: process.env.NODE_ENV === "production" ? ".evolvo.xyz" : undefined,
       },
     },
     csrfToken: {
+      // Use __Secure- instead of __Host- to allow domain setting
       name: process.env.NODE_ENV === "production"
-        ? "__Host-next-auth.csrf-token"
+        ? "__Secure-next-auth.csrf-token"
         : "next-auth.csrf-token",
       options: {
         httpOnly: true,
-        sameSite: "lax",
+        sameSite: "lax" as const,
         path: "/",
         secure: process.env.NODE_ENV === "production",
+        domain: process.env.NODE_ENV === "production" ? ".evolvo.xyz" : undefined,
       },
     },
     state: {
@@ -106,9 +110,10 @@ export const authOptions: NextAuthOptions = {
         : "next-auth.state",
       options: {
         httpOnly: true,
-        sameSite: "lax",
+        sameSite: "lax" as const,
         path: "/",
         secure: process.env.NODE_ENV === "production",
+        domain: process.env.NODE_ENV === "production" ? ".evolvo.xyz" : undefined,
         maxAge: 60 * 15, // 15 minutes
       },
     },
