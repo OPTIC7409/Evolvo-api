@@ -85,8 +85,8 @@ export async function POST(request: Request) {
       );
     }
     
-    // Get base URL for redirects
-    const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+    // Get base URL for redirects (frontend URL where users should be sent)
+    const baseUrl = process.env.FRONTEND_URL || "http://localhost:3000";
     
     // Create Stripe Checkout session
     const checkoutSession = await stripe.checkout.sessions.create({

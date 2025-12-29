@@ -14,6 +14,11 @@ import { getOrCreateUser, getUserSubscription } from "@/lib/db/supabase";
 // Frontend URL for redirects after auth
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
+// Debug logging for auth configuration
+console.log("[AUTH CONFIG] FRONTEND_URL:", FRONTEND_URL);
+console.log("[AUTH CONFIG] NEXTAUTH_URL:", process.env.NEXTAUTH_URL);
+console.log("[AUTH CONFIG] NODE_ENV:", process.env.NODE_ENV);
+
 // Extend the default session type
 declare module "next-auth" {
   interface Session {

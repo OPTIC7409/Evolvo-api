@@ -73,8 +73,8 @@ export async function POST(request: Request) {
           quantity: 1,
         },
       ],
-      success_url: `${process.env.NEXTAUTH_URL}/settings?success=true&tier=${tier}`,
-      cancel_url: `${process.env.NEXTAUTH_URL}/pricing?canceled=true`,
+      success_url: `${process.env.FRONTEND_URL || "http://localhost:3000"}/settings?success=true&tier=${tier}`,
+      cancel_url: `${process.env.FRONTEND_URL || "http://localhost:3000"}/pricing?canceled=true`,
       subscription_data: {
         metadata: {
           userId: user.id,
