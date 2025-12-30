@@ -3,6 +3,8 @@
  * 
  * Handles streaming AI responses with tool calling for the sandbox environment.
  * Uses Server-Sent Events (SSE) for real-time streaming.
+ * 
+ * Supports agent addons via custom system prompts passed from the frontend.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -20,6 +22,12 @@ interface RequestBody {
   messages: ChatMessage[];
   apiKey?: string;
   tier?: "free" | "pro" | "enterprise";
+  /** Custom system prompt from frontend (with agent addons applied) */
+  customSystemPrompt?: string;
+  /** Custom tools from frontend (with agent addon tools) */
+  customTools?: Anthropic.Tool[];
+  /** Active addon IDs for logging/analytics */
+  activeAddons?: string[];
 }
 
 // Response delay based on subscription tier (in ms)
@@ -32,7 +40,7 @@ const TIER_DELAYS: Record<string, number> = {
 export async function POST(request: Request) {
   try {
     const body: RequestBody = await request.json();
-    const { messages, apiKey, tier = "free" } = body;
+    const { messages, apiKey, tier = "free", customSystemPrompt, customTools, activeAddons } = body;
     
     // Apply artificial delay for free tier users
     const delay = TIER_DELAYS[tier] || TIER_DELAYS.free;
@@ -51,6 +59,17 @@ export async function POST(request: Request) {
     }
     
     const client = new Anthropic({ apiKey: anthropicApiKey });
+    
+    // Use custom system prompt if provided (from frontend agent addons), otherwise use default
+    const systemPrompt = customSystemPrompt || SYSTEM_PROMPT;
+    
+    // Use custom tools if provided (with addon tools merged), otherwise use default
+    const tools = customTools || SANDBOX_TOOLS;
+    
+    // Log active addons for analytics (optional)
+    if (activeAddons && activeAddons.length > 0) {
+      console.log(`[Sandbox Chat] Active agent addons: ${activeAddons.join(", ")}`);
+    }
     
     // Convert messages to Anthropic format
     const anthropicMessages: Anthropic.MessageParam[] = messages.map(msg => ({
@@ -73,8 +92,8 @@ export async function POST(request: Request) {
           const response = await client.messages.create({
             model: "claude-sonnet-4-20250514",
             max_tokens: 8192,
-            system: SYSTEM_PROMPT,
-            tools: SANDBOX_TOOLS,
+            system: systemPrompt,
+            tools: tools,
             messages: currentMessages,
             stream: true
           });
